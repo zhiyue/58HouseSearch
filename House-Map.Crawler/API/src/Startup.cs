@@ -1,22 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.IO;
 using HouseMap.Common;
 using HouseMap.Dao;
 using HouseMapAPI.Filters;
 using HouseMapAPI.Service;
+using HouseMapConsumer.Dao;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using NLog.Web;
+using Microsoft.OpenApi.Models;
 using StackExchange.Redis;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 namespace HouseMapAPI
 {
@@ -40,19 +37,25 @@ namespace HouseMapAPI
             InitRedis(services);
             InitDI(services);
             InitDB(services);
+
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "house-api", Version = "v1" });
+                c.EnableAnnotations();
+                var filePath = Path.Combine(System.AppContext.BaseDirectory, "HouseMapAPI.xml");
+                c.IncludeXmlComments(filePath);
+
+            });
             //添加cors 服务
             services.AddCors(o => o.AddPolicy("APICors", builder => builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
         }
 
         private void InitDB(IServiceCollection services)
         {
-            var loggerFactory = new LoggerFactory();
-            loggerFactory.AddConsole(Configuration.GetSection("Logging"));
             services.AddDbContextPool<HouseMapContext>(options =>
-          {
-              options.UseLoggerFactory(loggerFactory);
-              options.UseMySql(Configuration["QCloudMySQL"].ToString());
-          });
+            {
+                options.UseMySql(Configuration["QCloudMySQL"].ToString());
+            });
         }
 
         private void InitRedis(IServiceCollection services)
@@ -74,6 +77,8 @@ namespace HouseMapAPI
             services.AddScoped<ConfigDapper, ConfigDapper>();
             services.AddScoped<NoticeDapper, NoticeDapper>();
             services.AddScoped<HouseDapper, HouseDapper>();
+            services.AddScoped<HouseMongoMapper, HouseMongoMapper>();
+            services.AddScoped<MongoDBMapper, MongoDBMapper>();
 
             #endregion
 
@@ -105,8 +110,13 @@ namespace HouseMapAPI
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
         {
-            loggerFactory.AddConsole(Configuration.GetSection("Logging"));
-            env.ConfigureNLog("nlog.config");
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
+            {
+                c.RoutePrefix = "docs";
+                c.SwaggerEndpoint("/house-api/v1/swagger.json", "house-api");
+                c.DefaultModelRendering(ModelRendering.Model);
+            });
             app.UseErrorHandling();
             app.UseMvc();
         }
